@@ -1,0 +1,677 @@
+---
+title: "second modelling attempt"
+author: "Morgan G A Bugler (sxft32)"
+date: '2022-04-21'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Importing the raw data and printing the head of the data
+
+```{r cars}
+set.seed(2022)
+raw_data <- read.csv("Y:/Durham/Environment_&_Earth_Science/Mini-Project/time_series/durhamtemp_1901_2019.csv")
+cleaned_data <- as.matrix(raw_data)
+cleaned_data[is.nan(cleaned_data)] <- 0
+cleaned_data <- data.frame(cleaned_data)
+head(cleaned_data)
+```
+
+Converting most of the data to numeric apart from the date which is being converted into the day-month-year format to work with time based data frames.
+
+```{r}
+require(tidyverse)
+require(lubridate)
+
+cleaned_data$Year <- as.numeric(cleaned_data$Year)
+cleaned_data$Month <- as.numeric(cleaned_data$Month)
+cleaned_data$Day <- as.numeric(cleaned_data$Day)
+cleaned_data$Date <- dmy(cleaned_data$Date)
+cleaned_data$PPT. <- as.numeric(cleaned_data$PPT.)
+cleaned_data$Av.temp <- as.numeric(cleaned_data$Av.temp)
+cleaned_data$Tmax <- as.numeric(cleaned_data$Tmax)
+cleaned_data$Tmin <- as.numeric(cleaned_data$Tmin)
+
+head(cleaned_data)
+tail(cleaned_data)
+plot(cleaned_data$Date, cleaned_data$Av.temp, xlab = "Time (Years)", ylab = "Average Temperature (deg C)")
+```
+
+Fitting a linear model based on the Year to remove the overall trend of the data
+
+preparing the yearly data
+
+```{r}
+require(ggplot2)
+grouped_by_year <- cleaned_data %>% 
+                    group_by(Year) %>% 
+                    summarise_at(vars(Av.temp, Tmin, Tmax), 
+                                 list(name = mean))
+
+colnames(grouped_by_year) <- c("Year", "Av.temp", "Tmin", "Tmax")
+
+ggplot(grouped_by_year, aes(Year, Av.temp)) + 
+        geom_point()
+
+```
+
+Fitting a linear trend to the data
+
+```{r}
+fit.yearly_trend <- glm(Av.temp ~ Year, grouped_by_year, family = "gaussian")
+summary(fit.yearly_trend)
+
+years_to_pred <- data.frame(seq(1900, 2019))
+colnames(years_to_pred) <- c("Year")
+
+yearly_model <- cbind(years_to_pred, predict(fit.yearly_trend, years_to_pred))
+
+plot(yearly_model, 
+     ylim = c(7, 11), xlim = c(1890, 2030),
+     ylab = "Average Temperature (deg C)", xlab = "Year")
+par(new = TRUE)
+plot(grouped_by_year$Year, 
+     grouped_by_year$Av.temp,col = "red",
+     ylim = c(7, 11), xlim = c(1890, 2030),
+     ylab = "", xlab = "")
+```
+
+calculating the residuals
+
+```{r}
+colnames(yearly_model) <- c("Year", "predicted_temp")
+
+yearly_model$residuals <- yearly_model$predicted_temp - grouped_by_year$Av.temp
+
+plot(yearly_model$Year, yearly_model$residuals,
+      xlab = "Years", ylab = "Model residuals")
+```
+
+This appears to be a suitable model to predict the yearly temperature for the year 2020 as there is no structure to the residuals. 
+
+summary of fit 
+
+```{r}
+summary(fit.yearly_trend)
+```
+
+Detrending the clean data set and storing this as a new dataframe.
+
+```{r}
+dy_dataset <- cleaned_data
+
+full_year_trend <- data.frame(predict(fit.yearly_trend, dy_dataset))
+colnames(full_year_trend) <- c("pred_temp")
+
+dy_dataset$Av.temp <- dy_dataset$Av.temp - full_year_trend$pred_temp
+dy_dataset$Tmax <- dy_dataset$Tmax - full_year_trend$pred_temp
+dy_dataset$Tmin <- dy_dataset$Tmin - full_year_trend$pred_temp
+```
+
+Plotting the raw data and the detrended data
+
+```{r}
+plot(cleaned_data$Date, cleaned_data$Av.temp, 
+     ylim = c(-25, 25),
+     ylab = "Average Temperature (deg C)", xlab = "Years")
+plot(dy_dataset$Date, dy_dataset$Av.temp, 
+     ylim = c(-25, 25),
+     ylab = "Average Temperature (deg C)", xlab = "Years")
+```
+
+Ploting the data according to month to identify the seasonal/monthly trend 
+
+```{r}
+require(ggplot2)
+dy_by_month <- dy_dataset %>% 
+                    group_by(Month) %>% 
+                    summarise_at(vars(Av.temp, Tmin, Tmax), 
+                                 list(name = mean))
+
+colnames(dy_by_month) <- c("Month", "Av.temp", "Tmin", "Tmax")
+
+ggplot(dy_by_month, aes(Month, Av.temp)) + 
+        geom_point() + 
+        geom_errorbar(aes(ymin = Tmin,
+                          ymax = Tmax))
+
+```
+
+As shown there is a seasonal trend which has higher temperature during the summer months.
+
+Trying to identify the seasonal trend with a quadratic now the yearly increase has been removed
+
+```{r}
+fit_poly2.dy_monthly_trend <- glm(Av.temp ~ poly(Month, 2), dy_by_month, family = "gaussian")
+
+months_to_pred <- data.frame(seq(1,12))
+colnames(months_to_pred) <- c("Month")
+
+dy_monthly_model.poly2 <- predict(fit_poly2.dy_monthly_trend, months_to_pred)
+dy_monthly_model.poly2 <- data.frame(months_to_pred, dy_monthly_model.poly2)
+
+plot(dy_monthly_model.poly2, ylim = c(-10, 10),
+     xlab = "Month interger", ylab = "Average Monthly Temperature (deg C)")
+par(new = TRUE)
+plot(dy_by_month$Month, dy_by_month$Av.temp_name, col = "red", ylim = c(-10, 10),
+     xlab = "", ylab =  "")
+
+head(dy_monthly_model.poly2)
+head(dy_by_month)
+
+```
+
+calculating the residuals
+
+```{r}
+colnames(dy_monthly_model.poly2) <- c("Months", "Predicted_temp")
+dy_monthly_model.poly2$residuals <- dy_monthly_model.poly2$Predicted_temp - dy_by_month$Av.temp
+plot(dy_monthly_model.poly2$Months, dy_monthly_model.poly2$residuals,
+     xlab = "Months (interger)", ylab = "Average Temperature Residuals (deg C)")
+```
+
+The graph of the residuals shows a near cyclic pattern which indicates this model is not completely suitable.
+
+Trying to identify the seasonal trend with a cubic now the yearly increase has been removed
+
+```{r}
+fit_poly3.dy_monthly_trend <- glm(Av.temp ~ poly(Month, 3), dy_by_month, family = "gaussian")
+
+
+dy_monthly_model.poly3 <- predict(fit_poly3.dy_monthly_trend, months_to_pred)
+dy_monthly_model.poly3 <- data.frame(months_to_pred, dy_monthly_model.poly3)
+
+plot(dy_monthly_model.poly3, ylim = c(-10, 10),
+     xlab = "Months (interger)", ylab = "Average Temperature (deg C)")
+par(new = TRUE)
+plot(dy_by_month$Month, dy_by_month$Av.temp_name, col = "red", ylim = c(-10, 10), ylab = "", xlab = "")
+
+head(dy_monthly_model.poly3)
+head(dy_by_month)
+
+```
+
+calculating the residuals
+
+```{r}
+colnames(dy_monthly_model.poly3) <- c("Months", "Predicted_temp")
+dy_monthly_model.poly3$residuals <- dy_monthly_model.poly3$Predicted_temp - dy_by_month$Av.temp
+plot(dy_monthly_model.poly2$Months, dy_monthly_model.poly2$residuals, ylim = c(-3,3),
+     xlab = "Months (interger)", ylab = "Average Temperature Residuals (deg C)")
+par(new = TRUE)
+plot(dy_monthly_model.poly3$Months, dy_monthly_model.poly3$residuals, ylim = c(-3, 3), col = "red",
+     xlab = "", ylab = "")
+```
+
+Trying to identify the seasonal trend with a quatet now the yearly increase has been removed
+
+```{r}
+fit_poly4.dy_monthly_trend <- glm(Av.temp ~ poly(Month, 4), dy_by_month, family = "gaussian")
+
+
+dy_monthly_model.poly4 <- predict(fit_poly4.dy_monthly_trend, months_to_pred)
+dy_monthly_model.poly4 <- data.frame(months_to_pred, dy_monthly_model.poly4)
+
+plot(dy_monthly_model.poly4, ylim = c(-10, 10),
+     xlab = "Months (interger)", ylab = "Average Temperature (deg C)")
+par(new = TRUE)
+plot(dy_by_month$Month, dy_by_month$Av.temp, col = "red", ylim = c(-10, 10), ylab = "", xlab = "")
+
+head(dy_monthly_model.poly4)
+head(dy_by_month)
+
+```
+
+calculating the residuals
+
+```{r}
+colnames(dy_monthly_model.poly4) <- c("Months", "Predicted_temp")
+dy_monthly_model.poly4$residuals <- dy_monthly_model.poly4$Predicted_temp - dy_by_month$Av.temp
+plot(dy_monthly_model.poly2$Months, dy_monthly_model.poly2$residuals, ylim = c(-3,3),
+     xlab = "Months (interger)", ylab = "Average Temperature Residuals (deg C)")
+par(new = TRUE)
+plot(dy_monthly_model.poly3$Months, dy_monthly_model.poly3$residuals, ylim = c(-3, 3), col = "red",
+     xlab = "", ylab = "")
+par(new = TRUE)
+plot(dy_monthly_model.poly4$Months, dy_monthly_model.poly4$residuals, ylim = c(-3, 3), col = "purple",
+     xlab = "", ylab = "")
+```
+
+The residuals are smaller for a cubic trend than a quadratic but there is still a sinusoidal trend to them which means the fit is still not suitable.
+ 
+Trying to identify the seasonal trend with a simple fourier transform, a sin and cos, function now the yearly increase has been removed.
+
+```{r}
+fit_trig.dy_monthly_trend <- glm(Av.temp ~ sin(pi * Month/6) + cos(pi * Month/6), 
+                                 dy_by_month, family = "gaussian")
+
+
+dy_monthly_model.trig <- predict(fit_trig.dy_monthly_trend, months_to_pred)
+dy_monthly_model.trig <- data.frame(months_to_pred, dy_monthly_model.trig)
+
+plot(dy_monthly_model.trig, ylim = c(-10, 10),
+     xlab = "Months (interger)", ylab = "Average Temperature Residuals (deg C)")
+par(new = TRUE)
+plot(dy_by_month$Month, dy_by_month$Av.temp_name, col = "red", ylim = c(-10, 10), ylab = "", xlab = "")
+
+head(dy_monthly_model.trig)
+head(dy_by_month)
+
+```
+
+plotting the residuals as a function of Month
+
+```{r}
+colnames(dy_monthly_model.trig) <- c("Months", "Predicted_temp")
+dy_monthly_model.trig$residuals <- dy_monthly_model.trig$Predicted_temp - dy_by_month$Av.temp
+plot(dy_monthly_model.poly2$Months, dy_monthly_model.poly2$residuals, ylim = c(-3,3),
+     xlab = "Months (interger)", ylab = "Average Temperature Residuals (deg C)")
+par(new = TRUE)
+plot(dy_monthly_model.poly3$Months, dy_monthly_model.poly3$residuals, ylim = c(-3, 3), col = "red",
+     xlab = "", ylab = "")
+par(new = TRUE)
+plot(dy_monthly_model.poly4$Months, dy_monthly_model.poly4$residuals, ylim = c(-3, 3), col = "brown",
+     xlab = "", ylab = "")
+par(new = TRUE)
+plot(dy_monthly_model.trig$Months, dy_monthly_model.trig$residuals, ylim = c(-3, 3), col = "blue",
+     xlab = "", ylab = "")
+```
+
+Creating a data frame with the errors for each model
+
+```{r}
+monthly_model_errors <- data.frame(dy_monthly_model.poly2$residuals)
+colnames(monthly_model_errors) <- c("quadratic")
+
+monthly_model_errors$cubic <- dy_monthly_model.poly3$residuals
+monthly_model_errors$quartic <- dy_monthly_model.poly4$residuals
+monthly_model_errors$fourier <-dy_monthly_model.trig$residuals
+
+```
+
+creasting a box plot of the errors 
+
+```{r}
+boxplot(monthly_model_errors, ylab = "Residual", xlab = "model type")
+abline(h = 0, col = "red", lwd = 5)
+```
+
+```{r}
+summary(fit_trig.dy_monthly_trend)
+```
+
+deseasonlising the dy data set and storing as a dydm_dataset data frame.
+
+```{r}
+dydm_dataset <- dy_dataset
+
+full_month_trend <- data.frame(predict(fit_trig.dy_monthly_trend, dy_dataset))
+colnames(full_month_trend) <- c("pred_temp")
+
+dydm_dataset$Av.temp <- dydm_dataset$Av.temp - full_month_trend$pred_temp
+dydm_dataset$Tmax <- dydm_dataset$Tmax - full_month_trend$pred_temp
+dydm_dataset$Tmin <- dydm_dataset$Tmin - full_month_trend$pred_temp
+```
+
+plotting trends for the raw, detrended and, detrended and desonalised dataset
+
+```{r}
+plot(cleaned_data$Av.temp, ylim = c(-25, 25),
+     ylab = "Average Temperature (deg C)")
+hist(cleaned_data$Av.temp, xlim = c(-25, 25), breaks = 40,
+     xlab = "Average Temperature (deg C)", ylab = "Sample Frequency")
+plot(dy_dataset$Av.temp, ylim = c(-25, 25),
+     ylab = "Average Temperature (deg C)")
+hist(dy_dataset$Av.temp, xlim = c(-25, 25), breaks = 40,
+     xlab = "Average Temperature (deg C)", ylab = "Sample Frequency")
+plot(dydm_dataset$Av.temp, ylim = c(-25, 25),
+     ylab = "Average Temperature (deg C)")
+hist(dydm_dataset$Av.temp, xlim = c(-25, 25), breaks = 40,
+     xlab = "Average Temperature (deg C)", ylab = "Sample Frequency")
+```
+
+plotting a density curve for the average temperature 
+
+```{r}
+plot(density(cleaned_data$Av.temp), ylim = c(0, 0.14), xlim = c(-25, 25),
+     col = "black", lwd = 3, main = "Distribution of average temperature at each stage of preprossing",
+     xlab = "Durham average temperature (deg c)", ylab =  "Sample Density")
+par(new = TRUE)
+plot(density(dy_dataset$Av.temp), ylim = c(0, 0.14), xlim = c(-25, 25), 
+     col = "blue", lwd = 3, main = "", xlab =  "", ylab = "")
+par(new = TRUE)
+plot(density(dydm_dataset$Av.temp), ylim = c(0, 0.14), xlim = c(-25, 25),
+     col = "red", lwd = 4, main = "", xlab = "", ylab = "")
+```
+
+
+plotting the daily precipitation as a function of temperature for the three data sets
+
+```{r}
+plot(cleaned_data$Av.temp, cleaned_data$PPT.,  xlim = c(-25, 25),
+     xlab = "Average Temperature (deg C)", ylab = "Precipitation")
+plot(dy_dataset$Av.temp, dy_dataset$PPT.,  xlim = c(-25, 25),
+     xlab = "Average Temperature (deg C)", ylab = "Precipitation")
+plot(dydm_dataset$Av.temp, dydm_dataset$PPT.,  xlim = c(-25, 25),
+     xlab = "Average Temperature (deg C)", ylab = "Precipitation")
+mean(cleaned_data$Av.temp)
+mean(dy_dataset$Av.temp)
+mean(dydm_dataset$Av.temp)
+plot(dydm_dataset$PPT,
+     ylab = "precipitation")
+```
+
+now removing the year and month from the data set 
+
+```{r}
+dydm_dataset <- dydm_dataset[c(-1, -2)]
+```
+
+```{r}
+plot(dydm_dataset$Date, dydm_dataset$PPT.,
+     xlab = "Year", ylab = "Precipitation")
+plot(dydm_dataset$Date, dydm_dataset$Av.temp,
+     xlab = "Year", ylab = "Average Temperature (deg C)")
+```
+
+checking for lags
+
+```{r}
+acf(cleaned_data$Av.temp, lag.max = 60)
+acf(dy_dataset$Av.temp, lag.max =  60)
+acf(dydm_dataset$Av.temp, lag.max = 60)
+
+pacf(cleaned_data$Av.temp, lag.max = 60)
+pacf(dy_dataset$Av.temp, lag.max = 60)
+pacf(dydm_dataset$Av.temp, lag.max = 60)
+```
+
+The ACF and PCA shows that the detrending which has been conducted so far has reduce the auto correaltions with the previewous data but due to the ACF trailing off and an PACF being cutoff, it suggests an arima model has to be fitted. The cut off of PCA at 1 indicates  the model requires of auto regression component of 1. 
+
+going to fit an arima model with an auto-regression of 1 and no moving average or any seasonality versions.
+
+creating a time series of the detrended and deseaonalised data frame and checking whether it is stationary or not 
+
+```{r}
+require(aTSA)
+
+dydm_ts <- ts(dydm_dataset[c(4)], start = c(1900, 01, 01), frequency = 365.25)
+adf.test(dydm_ts)
+```
+
+Fitting an ARIMA model to the white noise after the yearly and seasonality have been removed. 
+
+```{r}
+require(forecast)
+
+dydm_fit.arima <- arima(dydm_ts, order = c(1, 0, 0)) #, ahead = 365)
+checkresiduals(dydm_fit.arima)
+
+```
+
+forcasting the model for the duration of 2020
+
+for some reason, the model is not showing for 2019 so need to predict for 2 years instead of 1 but this allows for a comparision between the data and the predicted trend. 
+
+```{r}
+forcast2020 <- forecast(dydm_fit.arima, h = 730)
+autoplot(forcast2020, 2000)
+summary(forcast2020)
+```
+
+Extracting the forecast temperature from original data in the forecast time series object.
+
+```{r}
+forcast_pred <- data.frame(forcast2020$mean)
+colnames(forcast_pred) <- c("pred_tmp")
+
+dates <- cleaned_data[c(1, 2, 3)]
+dates <- head(dates, 730)
+
+dates$Year <- dates$Year + 118
+
+prediction <- cbind(dates, forcast_pred)
+prediction$date = as.Date(with(prediction, paste(Year, Month, Day, sep = "-")),
+                               "%Y-%m-%d")
+
+plot(prediction$pred_tmp, 
+     xlab = "Year", ylab = "Predicted detrended Temperature (deg C)")
+```
+
+extracting the errors of the forecasted temperature 
+
+```{r}
+prediction$upper_80_error <- forcast2020$upper[,1]
+prediction$upper_95_error <- forcast2020$upper[,2]
+
+prediction$lower_80_error <- forcast2020$lower[,1]
+prediction$lower_95_error <- forcast2020$lower[,2]
+```
+
+
+appending the forcasted prediction to a new data frame
+
+```{r}
+future_month_trend <- data.frame(predict(fit_trig.dy_monthly_trend, prediction))
+colnames(future_month_trend) <- c("pred_month_trend")
+```
+
+Correcting the temperature forecast for the monthly variation
+
+```{r}
+#actuall trend 
+prediction$pred_tmp <- prediction$pred_tmp + future_month_trend$pred_month_trend
+
+#upper trends
+prediction$upper_80_error <- prediction$upper_80_error +
+                                future_month_trend$pred_month_trend
+prediction$upper_95_error <- prediction$upper_95_error + 
+                                future_month_trend$pred_month_trend
+
+prediction$lower_80_error <- prediction$lower_80_error + 
+                                future_month_trend$pred_month_trend
+prediction$lower_95_error <- prediction$lower_95_error +
+                                future_month_trend$pred_month_trend
+
+```
+
+```{r}
+ggplot(prediction, aes(date, pred_tmp)) + 
+        geom_point() +
+        geom_ribbon(aes(x = date, y = pred_tmp, ymax = upper_95_error, ymin = lower_95_error), alpha = 0.2) +
+        labs(x = "Years", y = "Predicted Average Temperature (deg C)")
+```
+
+
+Correcting the updated forecast for the yearly trend
+
+```{r}
+pred_year_trend <- data.frame(predict(fit.yearly_trend, prediction))
+colnames(pred_year_trend) <- c("pred_year_temp")
+
+prediction$pred_tmp <- prediction$pred_tmp + pred_year_trend$pred_year_temp
+
+#upper errors
+prediction$upper_80_error <- prediction$upper_80_error + pred_year_trend$pred_year_temp
+prediction$upper_95_error <- prediction$upper_95_error + pred_year_trend$pred_year_temp
+
+#lower errors
+prediction$lower_80_error <- prediction$lower_80_error + pred_year_trend$pred_year_temp
+prediction$lower_95_error <- prediction$lower_95_error + pred_year_trend$pred_year_temp
+```
+
+plotting the results
+
+```{r}
+ggplot(prediction, aes(date, pred_tmp)) + 
+        geom_point() +
+        geom_ribbon(aes(x = date, y = pred_tmp, ymax = upper_95_error, ymin = lower_95_error), alpha = 0.2) +
+        labs(x = "Time (Years)", y = "Predicted Average Temperature (deg C)")
+```
+
+
+retrieving the actual data for 2019 from the data set
+
+```{r}
+actual_2019_trend <- data.frame(ts(subset(cleaned_data, Year > 2018), 
+                                   start = c(2019, 01, 01), 
+                                   frequency = 365.25))
+actual_2019_trend$Year_dec <- (1:nrow(actual_2019_trend)/nrow(actual_2019_trend)) + 2019
+
+actual_2019_trend$date = as.Date(with(actual_2019_trend, paste(Year, Month, Day, sep = "-")),
+                               "%Y-%m-%d")
+```
+
+plotting the predicted against the actual
+
+```{r}
+
+ggplot(prediction, aes(x = date, y = pred_tmp)) + 
+        geom_point(color = "red") +
+        geom_point(data = actual_2019_trend, aes(x = date, y = Av.temp)) +
+        geom_ribbon(aes(x = date, y = pred_tmp, ymax = upper_95_error, ymin = lower_95_error), alpha = 0.2) +
+        labs(x = "Time (Years)", y = "Average Temperature (deg C)")
+
+```
+
+plotting an histogram of the prediction
+
+```{r}
+plot(density(prediction$pred_tmp),
+     col = "red", lwd = 3, 
+     main = "Heat distribution for 2019 and 2020",
+     xlab = "Average Temperature (deg C)", ylab = "Sample Density",
+     xlim = c(-5, 25), ylim = c(0, 0.1))
+par(new = TRUE)
+plot(density(actual_2019_trend$Av.temp),
+     main = "",
+     xlab = "", ylab = "",
+     xlim = c(-5, 25), ylim = c(0, 0.1))
+```
+
+generating white noise and adding it to the model
+
+```{r}
+
+daily_wn <- data.frame(arima.sim(model = list(order = c(0, 0, 0)), n = 730))
+colnames(daily_wn) <- c("wn")
+
+daily_wn$wn <- ts(daily_wn$wn, start = c(2019, 01, 01), frequency = 365.25)
+
+pred_year_trend <- data.frame(predict(fit.yearly_trend, prediction))
+colnames(pred_year_trend) <- c("pred_year_temp")
+
+nrow(prediction)
+nrow(daily_wn)
+
+daily_wn$wn <- as.numeric(daily_wn$wn)
+
+prediction$pred_tmp <- prediction$pred_tmp + daily_wn$wn
+
+#upper errors
+prediction$upper_80_error <- prediction$upper_80_error + daily_wn$wn
+prediction$upper_95_error <- prediction$upper_95_error + daily_wn$wn
+
+#lower errors
+prediction$lower_80_error <- prediction$lower_80_error + daily_wn$wn
+prediction$lower_95_error <- prediction$lower_95_error + daily_wn$wn
+plot(prediction$pred_tmp,
+     xlab = "Time (Years)", ylab = "Average Temperature (deg C)")
+
+```
+
+
+plotting the predicted against the actual now the white noise is introduced to the model
+
+```{r}
+
+ggplot(prediction, aes(x = date, y = pred_tmp)) + 
+        geom_point(color = "red") +
+        geom_point(data = actual_2019_trend, aes(x = date, y = Av.temp)) +
+        geom_ribbon(aes(x = date, y = pred_tmp, ymax = upper_95_error, ymin = lower_95_error), alpha = 0.2) +
+        geom_ribbon(aes(x = date, y = pred_tmp, ymax = upper_80_error, ymin = lower_80_error), alpha = 0.4) +
+        labs(x = "Time (Years)", y = "Average Temperature (deg C)")
+```
+
+Looking at the residuals of the 2019 data
+
+```{r}
+pred_2019 <- subset(prediction, Year < 2020)
+
+pred_2019$residuals <- ts(pred_2019$pred_tmp - actual_2019_trend$Av.temp,
+                          start = c(2019, 01, 01), 
+                          frequency = 365.25)
+
+plot(pred_2019$residuals, 
+     xlab = "Time (Years)", ylab = "residual in the daily temperature (deg C)")
+```
+
+recalculating the residuals for the raw data 
+
+```{r}
+acf(cleaned_data$Av.temp)
+
+pacf(cleaned_data$Av.temp)
+```
+
+creating a time series model using the average temperature of the raw unprcessed data
+
+```{r}
+require(forecast)
+
+raw_ts <- ts(cleaned_data[c(6)], start = c(1900, 01, 01), frequency = 365.25)
+raw_fit.arima <- arima(raw_ts, order = c(2, 0, 0)) #, ahead = 365)
+checkresiduals(raw_fit.arima)
+adf.test(raw_ts)
+
+```
+
+Forcasting the model for the duration of 2020 using the untrended and deseasonalized data 
+
+```{r}
+forcast2020.r <- forecast(raw_fit.arima, h = 730)
+autoplot(forcast2020.r, 2000)
+summary(forcast2020.r)
+```
+
+Retreiving the data of the forecast 
+```{r}
+forcast_pred.r <- data.frame(forcast2020.r$mean)
+colnames(forcast_pred.r) <- c("pred_tmp")
+
+prediction.r <- cbind(dates, forcast_pred.r)
+prediction.r$date = as.Date(with(prediction, paste(Year, Month, Day, sep = "-")),
+                               "%Y-%m-%d")
+
+plot(prediction.r$pred_tmp, 
+     xlab = "Time (Years)", ylab = "predicted detrended Temperature (deg C)")
+```
+
+extracting the errors of the forecasted temperature 
+
+```{r}
+prediction.r$upper_80_error <- forcast2020.r$upper[,1]
+prediction.r$upper_95_error <- forcast2020.r$upper[,2]
+
+prediction.r$lower_80_error <- forcast2020.r$lower[,1]
+prediction.r$lower_95_error <- forcast2020.r$lower[,2]
+```
+
+plotting the forecast based on the raw data and over lying the data from 2019
+
+```{r}
+
+ggplot(prediction.r, aes(x = date, y = pred_tmp, col = "2019 Data")) + 
+        geom_point(color = "red") +
+        geom_point(data = actual_2019_trend, aes(x = date, y = Av.temp, col = "prediction")) +
+        geom_ribbon(aes(x = date, y = pred_tmp, 
+                        ymax = upper_95_error, 
+                        ymin = lower_95_error, col = "95% error"), alpha = 0.2) +
+        geom_ribbon(aes(x = date, y = pred_tmp, 
+                        ymax = upper_80_error, 
+                        ymin = lower_80_error, col = "80% error"), alpha = 0.4) +
+        labs(x = "Time (Years)", y = "Average Temperature (deg C)")
+```
