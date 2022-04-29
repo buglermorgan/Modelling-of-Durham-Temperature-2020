@@ -371,7 +371,7 @@ plotting a density curve for the average temperature
 
 ```{r}
 plot(density(cleaned_data$Av.temp), ylim = c(0, 0.14), xlim = c(-25, 25),
-     col = "black", lwd = 3, main = "Distribution of average temperature at each stage of preprossing",
+     col = "black", lwd = 3, main = "Distribution of average temperature at each stage of preprocessing",
      xlab = "Durham average temperature (deg c)", ylab =  "Sample Density")
 par(new = TRUE)
 plot(density(dy_dataset$Av.temp), ylim = c(0, 0.14), xlim = c(-25, 25), 
@@ -654,7 +654,7 @@ pred_2019$residuals <- ts(pred_2019$pred_tmp - actual_2019_trend$Av.temp,
                           frequency = 365.25)
 
 plot(pred_2019$residuals, 
-     xlab = "Time (Years)", ylab = "residual in the daily temperature (deg C)")
+     xlab = "Years", ylab = "residual in the daily temperature (deg C)")
 ```
 
 recalculating the residuals for the raw data 
