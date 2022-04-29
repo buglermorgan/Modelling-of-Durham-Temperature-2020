@@ -552,7 +552,7 @@ ggplot(prediction, aes(date, pred_tmp, col = "prediction")) +
                         ymax = upper_95_error, 
                         ymin = lower_95_error,
                         col = "95% confidence"), alpha = 0.2) +
-        labs(x = "Time (Years)", y = "Predicted Average Temperature (deg C)")
+        labs(x = "Years", y = "Predicted Average Temperature (deg C)")
 ```
 
 
@@ -695,7 +695,7 @@ prediction.r$date = as.Date(with(prediction, paste(Year, Month, Day, sep = "-"))
                                "%Y-%m-%d")
 
 plot(prediction.r$pred_tmp, 
-     xlab = "Time (Years)", ylab = "predicted detrended Temperature (deg C)")
+     xlab = "Years", ylab = "predicted detrended Temperature (deg C)")
 ```
 
 extracting the errors of the forecasted temperature 
